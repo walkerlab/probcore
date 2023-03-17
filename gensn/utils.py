@@ -12,11 +12,18 @@ def register_to_module(module, field, value):
 
 def turn_to_tuple(x):
     """
-    Given a value x, turn into a consistent tuple
-    * if x is None, return an empty tumple ()
-    * if x is a non-tuple value, return as a single-element tuple (x,)
-    * if x is already a tuple
+    Given an argument x, construct a tuple such that:
+    * if x is None, returns an empty tuple ()
+    * if x is a non-tuple value, return a single element tuple (x,)
+    * if x is already a tuple, simply return x
+
+    Args:
+        x (any): An argument to be transformed into a tuple as necessary.
+
+    Returns:
+        tuple: A tuple of arguments. Refer to the summary above for how the argument is handled.
     """
+
     if x is None:
         return ()
     return x if isinstance(x, tuple) else (x,)
