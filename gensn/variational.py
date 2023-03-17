@@ -19,6 +19,8 @@ def ELBO_parts(prior, conditional, posterior, *obs, n_samples=1):
 
 
 class ELBOMarginal(nn.Module):
+    approximate_log_prob = True
+
     def __init__(self, joint, posterior, n_samples=1):
         super().__init__()
         self.joint = joint
