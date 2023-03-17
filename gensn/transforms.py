@@ -4,10 +4,11 @@ import torch.nn.functional as F
 from warnings import warn
 import math
 
+
 class SequentialTransform(nn.Module):
     def __init__(self, *transforms):
         self.transforms = nn.ModuleList(transforms)
-        
+
     # TODO: check the content of nn.Module __call__ and create something similar for inverse
     def forward(self, x, cond=None):
         logL = 0
@@ -15,32 +16,31 @@ class SequentialTransform(nn.Module):
             x, logDet = t(x, cond=cond)
             logL += logDet
         return x, logL
-    
+
     def inverse(self, y, cond=None):
         logL = 0
         for t in self.transforms[::-1]:
             y, logDet = t(y, cond=cond)
             logL += logDet
         return y, logL
-    
-    
+
+
 class InverseTransform(nn.Module):
     def __init__(self, transform):
         self.transform = transform
 
     def forward(self, x, cond=None):
         return self.transform.inverse(x, cond=cond)
-    
+
     def inverse(self, y, cond=None):
         return self.transform(y, cond=cond)
-    
 
-    
+
 # # conceptual template
 # class InvertibleTransform(nn.Module):
 #     def forward(self, x, logL=0):
 #         return y, logL + log_det_f_prime
-    
+
 #     def inverse(self, y, logL=0):
 #         return x, logL - log_det_f_prime
 
@@ -58,10 +58,10 @@ class MarginalTransform(nn.Module):
 
     def get_log_det(self, x):
         pass
-        
+
     def forward(self, x):
         return self.marginal_forward(x).sum(dim=self.dim), self.get_log_det(x)
-    
+
     def inverse(self, y):
         x = self.marginal_inverse(y)
         return x, -self.get_log_det(x)
@@ -73,7 +73,9 @@ class ELU(MarginalTransform):
         self.alpha = alpha
 
     def get_log_det(self, x):
-        return torch.where(x > 0, torch.zeros(1).to(x.device), x + torch.log(self.alpha))
+        return torch.where(
+            x > 0, torch.zeros(1).to(x.device), x + torch.log(self.alpha)
+        )
 
     def marginal_forward(self, x, cond=None):
         return F.elu(x, self.alpha)
@@ -81,7 +83,7 @@ class ELU(MarginalTransform):
     def marginal_inverse(self, y, cond=None):
         # TODO: check if use of finfo is meaningful
         finfo = torch.finfo(y.dtype)
-        return torch.where(y > 0, y, (y / self.alpha + 1).clamp(min=finfo.tiny)) 
+        return torch.where(y > 0, y, (y / self.alpha + 1).clamp(min=finfo.tiny))
 
 
 class OffsetELU(nn.Module):
@@ -95,7 +97,8 @@ class OffsetELU(nn.Module):
         return y + self.offset, logL
 
     def inverse(self, y, cond=None):
-        return self.elu.inverse(y-self.offset, cond=cond)
+        return self.elu.inverse(y - self.offset, cond=cond)
+
 
 class ELUplus1(OffsetELU):
     def __init__(self, alpha=1.0, dim=-1):
@@ -103,21 +106,18 @@ class ELUplus1(OffsetELU):
 
 
 class Log(MarginalTransform):
-
     def get_log_det(self, x):
         # TODO: deal with dim not being just -1
         return torch.log(x.abs().clamp(min=torch.finfo(x.dtype).tiny)).log()
-    
+
     def marginal_forward(self, x, cond=None):
         return x.clamp(min=torch.finfo(x.dtype).tiny).log()
-    
+
     def marginal_inverse(self, y, cond=None):
         return y.exp()
-    
+
 
 class Exp(MarginalTransform):
-
-
     def get_log_det(self, x):
         return x
 
@@ -128,7 +128,6 @@ class Exp(MarginalTransform):
         return y.clamp(min=torch.finfo(z.dtype).tiny).log()
 
 
-    
 class IndependentAffine(MarginalTransform):
     # TODO: add logic for initialization
     def __init__(self, input_dim=1, dim=-1):
@@ -138,17 +137,18 @@ class IndependentAffine(MarginalTransform):
         self.bias = nn.Parameter(torch.empty(input_dim))
 
     def get_log_det(self, x):
-        return torch.log(torch.abs(self.weight) + torch.finfo(self.weight.dtype).tiny) * torch.ones_like(x)
-    
+        return torch.log(
+            torch.abs(self.weight) + torch.finfo(self.weight.dtype).tiny
+        ) * torch.ones_like(x)
+
     def marginal_forward(self, x):
         return x * self.weight + self.bias
-    
+
     def marginal_inverse(self, y):
         return (y - self.bias) / self.weight
-    
+
 
 class Pow(MarginalTransform):
-
     def get_log_det(self, x):
         return torch.log(self.exponent.abs() + torch.finfo(x.dtype).tiny) + (
             self.exponent - 1
@@ -166,7 +166,6 @@ class Pow(MarginalTransform):
 
 
 class Sqrt(MarginalTransform):
-
     def get_log_det(self, x):
         # TODO: replace with torch.log
         return -math.log(2.0) - 0.5 * torch.log(x.abs() + torch.finfo(x.dtype).tiny)
@@ -192,9 +191,7 @@ class Softplus(MarginalTransform):
         return (-y).expm1().neg().clamp(min=torch.finfo(y.dtype).tiny).log() + y
 
 
-
 class Tanh(MarginalTransform):
-
     def get_log_det(self, x):
         # using numerically stable formula from TF implementation:
         # https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/bijectors/tanh.py#L69-L80
@@ -209,7 +206,6 @@ class Tanh(MarginalTransform):
     def marginal_inverse(self, y):
         eps = torch.finfo(y.dtype).eps
         return y.clamp(min=-1 + eps, max=1 - eps).atanh()
-
 
 
 class Sigmoid(MarginalTransform):

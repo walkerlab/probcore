@@ -1,12 +1,14 @@
 import torch
 from torch import nn
 
+
 def register_to_module(module, field, value):
     if isinstance(value, torch.Tensor) and not isinstance(value, nn.Parameter):
         # register as buffer
         module.register_buffer(field, value)
     else:
         setattr(module, field, value)
+
 
 def turn_to_tuple(x):
     """
@@ -21,11 +23,11 @@ def turn_to_tuple(x):
 
 
 def make_args(x, *args, **kwargs):
-    if isinstance(x, dict): # TODO: consider making it a Collection.Mapping
+    if isinstance(x, dict):  # TODO: consider making it a Collection.Mapping
         kwargs.update(x)
     elif isinstance(x, tuple):
         args = x + args
     else:
         args = (x,) + args
-        
+
     return args, kwargs
