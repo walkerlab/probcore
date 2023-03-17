@@ -72,7 +72,7 @@ class TrainableDistributionAdapter(nn.Module):
 
     def __init__(self, distribution_class, *dist_args, _parameters=None, **dist_kwargs):
         super().__init__()
-        self.distrbrituion_class = distribution_class
+        self.distribution_class = distribution_class
         self.param_counts = len(dist_args)
         self.param_keys = list(dist_kwargs.keys())
 
@@ -113,7 +113,7 @@ class TrainableDistributionAdapter(nn.Module):
                 self.parameter_generator(*cond), *dist_args, **dist_kwargs
             )
 
-        return self.distrbrituion_class(*dist_args, **dist_kwargs)
+        return self.distribution_class(*dist_args, **dist_kwargs)
 
     def log_prob(self, *obs, cond=None):
         return self.distribution(cond=cond).log_prob(*obs)
