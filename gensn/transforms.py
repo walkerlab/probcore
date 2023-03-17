@@ -6,6 +6,8 @@ import math
 
 
 class SequentialTransform(nn.Module):
+    """Defines a transform by combining one or more transforms in sequence."""
+
     def __init__(self, *transforms):
         self.transforms = nn.ModuleList(transforms)
 
@@ -46,7 +48,15 @@ class InverseTransform(nn.Module):
 
 
 class MarginalTransform(nn.Module):
+    """Defines marginal transform template"""
+
     def __init__(self, dim=-1):
+        """Initialize the marginal transform. Specify the dimension to be
+        collapsed over when computing the log determinant.
+
+        Args:
+            dim (int or tuple, optional): Dimension(s) to collapse over when computing the log determinant. Defaults to -1 (the last dimension).
+        """
         super().__init__()
         self.dim = dim
 
