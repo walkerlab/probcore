@@ -4,6 +4,15 @@ from .utils import register_to_module, turn_to_tuple, make_args
 from abc import abstractmethod, ABC
 
 
+# a helper function to visit the target field
+# and invoke the field with cond if it is a nn.Module.
+# Otherwise, simply return the field content
+def parse_attr(attr, cond=None):
+    if isinstance(attr, nn.Module):
+        attr = attr(*cond)
+    return attr
+
+
 # come up with a better name
 # here we assume that conditioning of the joint distribution can occur
 # by conditioning the prior
@@ -32,6 +41,23 @@ class Joint(nn.Module):
         x_samples = self.prior.rsample(sample_shape=sample_shape, cond=cond)
         y_samples = self.conditional.rsample(cond=x_samples)
         return turn_to_tuple(x_samples) + turn_to_tuple(y_samples)
+
+
+# class DeltaDistribution(nn.Module):
+#     def __init__(self, value):
+#         self.value = value
+
+#     def log_prob(self, obs, cond=None):
+#         # TODO: write to deal with more than one rvs
+#         return torch.log(self.prob(obs, cond=cond))
+
+#     def prob(self, obs, cond=None):
+#         # TODO: write to deal with more than one rvs
+#         return torch.where(
+#             torch.equal(obs, parse_attr(self.value, cond=cond)), 0, 1
+#         ).to(obs.device)
+
+#     def sample(self, sample_shape=torch.size([]), cond=None):
 
 
 class TrainableDistribution(nn.Module, ABC):
@@ -92,19 +118,13 @@ class TrainableDistributionAdapter(nn.Module):
     def distribution(self, cond=None):
         cond = turn_to_tuple(cond)
 
-        # a helper function to visit the target field
-        # and invoke the field with cond if it is a nn.Module.
-        # Otherwise, simply return the field content
-        def parse_attr(field, cond=None):
-            attr = getattr(self, field)
-            if isinstance(attr, nn.Module):
-                attr = attr(*cond)
-            return attr
-
         dist_args = tuple(
-            parse_attr(f"_arg{pos}", cond=cond) for pos in range(self.param_counts)
+            parse_attr(getattr(self, f"_arg{pos}"), cond=cond)
+            for pos in range(self.param_counts)
         )
-        dist_kwargs = {k: parse_attr(k, cond=cond) for k in self.param_keys}
+        dist_kwargs = {
+            k: parse_attr(getattr(self, k), cond=cond) for k in self.param_keys
+        }
 
         # TODO: consider flipping the order of this with
         # init specified parameters
