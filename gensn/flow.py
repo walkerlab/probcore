@@ -25,3 +25,7 @@ class FlowDistribution(nn.Module):
         samples = self.base_distribution.rsample(sample_shape=sample_shape, cond=cond)
         y, _ = self.transform.inverse(samples, cond=cond)
         return y
+
+
+class SurVAEFlowDistribution(nn.Module):
+    pass
