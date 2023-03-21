@@ -3,12 +3,14 @@ from torch import nn
 import torch.nn.functional as F
 from warnings import warn
 import math
+from ..utils import invoke_with_cond
 
 
 class SequentialTransform(nn.Module):
     """Defines a transform by combining one or more transforms in sequence."""
 
     def __init__(self, *transforms):
+        super().__init__()
         self.transforms = nn.ModuleList(transforms)
 
     # TODO: check the content of nn.Module __call__ and create something similar for inverse
@@ -29,6 +31,7 @@ class SequentialTransform(nn.Module):
 
 class InverseTransform(nn.Module):
     def __init__(self, transform):
+        super().__init__()
         self.transform = transform
 
     def forward(self, x, cond=None):
@@ -36,6 +39,20 @@ class InverseTransform(nn.Module):
 
     def inverse(self, y, cond=None):
         return self.transform(y, cond=cond)
+
+
+class ConditionalShift(nn.Module):
+    def __init__(self, conditional_shift):
+        super().__init__()
+        self.conditional_shift = conditional_shift
+
+    def forward(self, x, cond=None):
+        x = x + invoke_with_cond(self.conditional_shift, cond=cond)
+        return x, torch.zeros_like(x)
+
+    def inverse(self, x, cond=None):
+        x = x - invoke_with_cond(self.conditional_shift, cond=cond)
+        return x, torch.zeros_like(x)
 
 
 # # conceptual template
