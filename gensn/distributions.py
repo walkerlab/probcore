@@ -1,16 +1,7 @@
 import torch
 from torch import nn
-from .utils import register_to_module, turn_to_tuple, make_args
+from .utils import register_to_module, turn_to_tuple, make_args, invoke_with_cond
 from abc import abstractmethod, ABC
-
-
-# a helper function to visit the target field
-# and invoke the field with cond if it is a nn.Module.
-# Otherwise, simply return the field content
-def parse_attr(attr, cond=None):
-    if isinstance(attr, nn.Module):
-        attr = attr(*cond)
-    return attr
 
 
 # come up with a better name
@@ -119,11 +110,11 @@ class TrainableDistributionAdapter(nn.Module):
         cond = turn_to_tuple(cond)
 
         dist_args = tuple(
-            parse_attr(getattr(self, f"_arg{pos}"), cond=cond)
+            invoke_with_cond(getattr(self, f"_arg{pos}"), cond=cond)
             for pos in range(self.param_counts)
         )
         dist_kwargs = {
-            k: parse_attr(getattr(self, k), cond=cond) for k in self.param_keys
+            k: invoke_with_cond(getattr(self, k), cond=cond) for k in self.param_keys
         }
 
         # TODO: consider flipping the order of this with

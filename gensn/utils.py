@@ -2,6 +2,15 @@ import torch
 from torch import nn
 
 
+# a helper function to visit the target field
+# and invoke the field with cond if it is a nn.Module.
+# Otherwise, simply return the field content
+def invoke_with_cond(attr, cond=None):
+    if isinstance(attr, nn.Module):
+        attr = attr(*cond)
+    return attr
+
+
 def register_to_module(module, field, value):
     if isinstance(value, torch.Tensor) and not isinstance(value, nn.Parameter):
         # register as buffer
