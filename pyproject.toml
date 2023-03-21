@@ -5,7 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gensn"
 version = "0.0.0"
+authors = [
+    { name="Edgar Y. Walker", email="eywalker@uw.edu"}
+]
+description = "Library for generative, sampling-based modeling"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
 
+[project.urls]
+"Homepage" = "https://github.com/walkerlab/gensn"
+"Bug Tracker" = "https://github.com/walkerlab/gensn/issues"
 
 [tool.setuptools]
 packages = ["gensn"]
