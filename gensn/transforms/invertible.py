@@ -151,7 +151,7 @@ class Exp(MarginalTransform):
         return x.exp()
 
     def marginal_inverse(self, y):
-        return y.clamp(min=torch.finfo(z.dtype).tiny).log()
+        return y.clamp(min=torch.finfo(y.dtype).tiny).log()
 
 
 class IndependentAffine(MarginalTransform):
