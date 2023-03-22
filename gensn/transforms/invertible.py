@@ -3,7 +3,6 @@ from torch import nn
 import torch.nn.functional as F
 from warnings import warn
 import math
-import numpy as np
 from ..utils import invoke_with_cond
 
 
