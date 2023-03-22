@@ -38,7 +38,7 @@ class InverseTransform(nn.Module):
         return self.transform.inverse(x, cond=cond)
 
     def inverse(self, y, cond=None):
-        return self.transform(y, cond=cond)
+        return self.transform.forward(y, cond=cond)
 
 
 class ConditionalShift(nn.Module):
@@ -95,6 +95,25 @@ class MarginalTransform(nn.Module):
         return x, -self.get_log_det(x)
 
 
+class IndependentAffine(MarginalTransform):
+    def __init__(self, input_dim=1, dim=-1):
+        super().__init__(dim=dim)
+        self.input_dim = input_dim
+        self.weight = nn.Parameter(torch.empty(input_dim))
+        self.bias = nn.Parameter(torch.empty(input_dim))
+
+    def get_log_det(self, x):
+        return torch.log(
+            abs(self.weight) + torch.finfo(self.weight.dtype).tiny
+        ) * torch.ones_like(x)
+
+    def marginal_forward(self, x):
+        return x * self.weight + self.bias
+
+    def marginal_inverse(self, y):
+        return (y - self.bias) / self.weight
+
+
 class ELU(MarginalTransform):
     def __init__(self, alpha=1.0, dim=-1):
         super().__init__(dim=dim)
@@ -130,18 +149,20 @@ class OffsetELU(nn.Module):
 
 class ELUplus1(OffsetELU):
     def __init__(self, alpha=1.0, dim=-1):
-        super().__init__(alpha=1.0, offset=1.0, dim=dim)
+        super().__init__(alpha=alpha, offset=1.0, dim=dim)
 
 
-class Log(MarginalTransform):
-    def get_log_det(self, x):
-        return -torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny))
+class Softplus(MarginalTransform):
+    def _get_marginal_log_det(self, x):
+        # TODO: get the implementation for softplus
+        return -F.softplus(-x)
 
-    def marginal_forward(self, x, cond=None):
-        return x.clamp(min=torch.finfo(x.dtype).tiny).log()
+    def marginal_forward(self, x):
+        return F.softplus(x)
 
-    def marginal_inverse(self, y, cond=None):
-        return y.exp()
+    def marginal_inverse(self, y):
+        # TODO: consider providing inverse_softplus
+        return (-y).expm1().neg().clamp(min=torch.finfo(y.dtype).tiny).log() + y
 
 
 class Exp(MarginalTransform):
@@ -155,24 +176,46 @@ class Exp(MarginalTransform):
         return y.clamp(min=torch.finfo(y.dtype).tiny).log()
 
 
-class IndependentAffine(MarginalTransform):
-    # TODO: add logic for initialization
-    def __init__(self, input_dim=1, dim=-1):
-        super().__init__(dim=dim)
-        self.input_dim = input_dim
-        self.weight = nn.Parameter(torch.empty(input_dim))
-        self.bias = nn.Parameter(torch.empty(input_dim))
-
+class Tanh(MarginalTransform):
     def get_log_det(self, x):
-        return torch.log(
-            abs(self.weight) + torch.finfo(self.weight.dtype).tiny
-        ) * torch.ones_like(x)
+        # using numerically stable formula from TF implementation:
+        # https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/bijectors/tanh.py#L69-L80
+        return 2.0 * (math.log(2.0) - x - F.softplus(-2.0 * x))
 
     def marginal_forward(self, x):
-        return x * self.weight + self.bias
+        return torch.tanh(x)
+
+    # switchable safeguarding?
+    # publicized?
+    # this is silently failing for atanh out of bounds inputs
+    def marginal_inverse(self, y):
+        eps = torch.finfo(y.dtype).eps
+        return y.clamp(min=-1 + eps, max=1 - eps).atanh()
+
+
+class Sigmoid(MarginalTransform):
+    # TODO: implement scaling and also top & bottom offset
+    def get_log_det(self, x):
+        return -F.softplus(-x) - F.softplus(x)
+
+    def marginal_forward(self, x):
+        return torch.sigmoid(x)
 
     def marginal_inverse(self, y):
-        return (y - self.bias) / self.weight
+        finfo = torch.finfo(y.dtype)
+        y = torch.clamp(y, min=finfo.tiny, max=1.0 - finfo.eps)
+        return y.log() - (-y).log1p()
+
+
+class Log(MarginalTransform):
+    def get_log_det(self, x):
+        return -torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny))
+
+    def marginal_forward(self, x, cond=None):
+        return x.clamp(min=torch.finfo(x.dtype).tiny).log()
+
+    def marginal_inverse(self, y, cond=None):
+        return y.exp()
 
 
 class Pow(MarginalTransform):
@@ -205,47 +248,3 @@ class Sqrt(MarginalTransform):
 
     def marginal_inverse(self, z):
         return z.pow(2)
-
-
-class Softplus(MarginalTransform):
-    def _get_marginal_log_det(self, x):
-        # TODO: get the implementation for softplus
-        return -F.softplus(-x)
-
-    def marginal_forward(self, x):
-        return F.softplus(x)
-
-    def marginal_inverse(self, y):
-        # TODO: consider providing inverse_softplus
-        return (-y).expm1().neg().clamp(min=torch.finfo(y.dtype).tiny).log() + y
-
-
-class Tanh(MarginalTransform):
-    def get_log_det(self, x):
-        # using numerically stable formula from TF implementation:
-        # https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/bijectors/tanh.py#L69-L80
-        return 2.0 * (math.log(2.0) - x - F.softplus(-2.0 * x))
-
-    def marginal_forward(self, x):
-        return torch.tanh(x)
-
-    # switchable safeguarding?
-    # publicized?
-    # this is silently failing for atanh out of bounds inputs
-    def marginal_inverse(self, y):
-        eps = torch.finfo(y.dtype).eps
-        return y.clamp(min=-1 + eps, max=1 - eps).atanh()
-
-
-class Sigmoid(MarginalTransform):
-    # TODO: implement scaling and also top & bottom offset
-    def get_log_det(self, x):
-        return -F.softplus(-x) - F.softplus(x)
-
-    def marginal_forward(self, x):
-        return torch.sigmoid(x)
-
-    def marginal_inverse(self, y):
-        finfo = torch.finfo(y.dtype)
-        y = torch.clamp(y, min=finfo.tiny, max=1.0 - finfo.eps)
-        return y.log() - (-y).log1p()
