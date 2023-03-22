@@ -1,8 +1,10 @@
+from abc import ABC, abstractmethod
+
 import torch
-from torch import nn
-from .utils import register_to_module, turn_to_tuple, make_args, invoke_with_cond
-from abc import abstractmethod, ABC
 import torch.distributions as D
+from torch import nn
+
+from .utils import invoke_with_cond, make_args, register_to_module, turn_to_tuple
 
 
 # come up with a better name
