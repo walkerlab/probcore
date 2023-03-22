@@ -109,6 +109,26 @@ class TrainableDistributionAdapter(nn.Module):
         if _parameters is not None:
             self.parameter_generator = _parameters
 
+    # overwrite extra_repr to include the distribution class
+    # TODO: consider adding the parameters as well
+    def extra_repr(self):
+        repr = f"distribution_class={self.distribution_class!r}"
+
+        if self.param_counts > 0:
+            repr += ", " + ", ".join(
+                f"{getattr(self, f'_arg{pos}')!r}" for pos in range(self.param_counts)
+            )
+
+        if len(self.param_keys) > 0:
+            repr += ", " + ", ".join(
+                f"{k}={getattr(self, k)!r}" for k in self.param_keys
+            )
+
+        if hasattr(self, "parameter_genrator"):
+            repr += ", " + f"_parameters={self.parameter_generator!r}"
+
+        return repr
+
     def distribution(self, cond=None):
         cond = turn_to_tuple(cond)
 
@@ -142,17 +162,38 @@ class TrainableDistributionAdapter(nn.Module):
         return self.distribution(cond=cond).rsample(sample_shape=sample_shape)
 
 
-def wrap_with_indep(distribution_class, event_dims=1):
-    """
-    Wrap the construction of the target distribution `distr_class` with
-    D.Independent. The returned function can be used as if it is
-    a constructor for an indepdenent version of the distribution
-    """
+# def wrap_with_indep(distribution_class, event_dims=1):
+#     """
+#     Wrap the construction of the target distribution `distr_class` with
+#     D.Independent. The returned function can be used as if it is
+#     a constructor for an indepdenent version of the distribution
+#     """
 
-    def indep_distr(*args, **kwargs):
-        return D.Independent(distribution_class(*args, **kwargs), event_dims)
+#     def indep_distr(*args, **kwargs):
+#         return D.Independent(distribution_class(*args, **kwargs), event_dims)
 
-    return indep_distr
+#     return indep_distr
+
+
+class IndependentTrainableDistributionAdapter(TrainableDistributionAdapter):
+    def __init__(
+        self,
+        distribution_class,
+        *dist_args,
+        _parameters=None,
+        event_dims=1,
+        **dist_kwargs,
+    ):
+        super().__init__(
+            distribution_class, *dist_args, _parameters=_parameters, **dist_kwargs
+        )
+        self.event_dims = event_dims
+
+    def distribution(self, cond=None):
+        return D.Independent(super().distribution(cond=cond), self.event_dims)
+
+    def extra_repr(self):
+        return super().extra_repr() + f", event_dims={self.event_dims}"
 
 
 class WrappedTrainableDistribution(nn.Module):
@@ -176,6 +217,6 @@ class WrappedTrainableDistribution(nn.Module):
 class IndependentNormal(WrappedTrainableDistribution):
     def __init__(self, loc, scale, event_dims=1):
         super().__init__()
-        self.trainable_distribution = TrainableDistributionAdapter(
-            wrap_with_indep(D.Normal, event_dims=event_dims), loc=loc, scale=scale
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.Normal, event_dims=event_dims, loc=loc, scale=scale
         )
