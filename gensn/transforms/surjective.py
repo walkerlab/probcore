@@ -5,9 +5,14 @@ from torch import nn
 
 
 class StepQuantizer(nn.Module):
-    def __init__(self, step=1):
+    # TODO: consider calling it center instead of shift
+    def __init__(self, step=1, shift=0):
         super().__init__()
         self.step = step
+        self.shift = shift
 
     def forward(self, z):
-        return torch.floor(z / self.step).to(z.dtype) * self.step
+        return (
+            torch.floor((z - self.shift) / self.step).to(z.dtype) * self.step
+            + self.shift
+        )
