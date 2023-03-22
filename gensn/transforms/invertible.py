@@ -1,8 +1,10 @@
-import torch
-from torch import nn
-import torch.nn.functional as F
-from warnings import warn
 import math
+from warnings import warn
+
+import torch
+import torch.nn.functional as F
+from torch import nn
+
 from ..utils import invoke_with_cond
 
 
@@ -92,7 +94,7 @@ class MarginalTransform(nn.Module):
 
     def inverse(self, y, cond=None):
         x = self.marginal_inverse(y)
-        return x, -self.get_log_det(x)
+        return x, -self.get_log_det(x).sum(dim=self.dim)
 
 
 class IndependentAffine(MarginalTransform):
@@ -153,7 +155,7 @@ class ELUplus1(OffsetELU):
 
 
 class Softplus(MarginalTransform):
-    def _get_marginal_log_det(self, x):
+    def get_log_det(self, x):
         # TODO: get the implementation for softplus
         return -F.softplus(-x)
 
