@@ -77,7 +77,7 @@ class VariationalDequantizedDistribution(nn.Module):
         elbo = -self.dequantizer(*turn_to_tuple(z_samples), cond=obs)
         # TODO: rewrite this so that quantizer can be used as is for joint & elbo
         elbo += self.dequantized_distribution(*turn_to_tuple(z_samples))
-        return elbo
+        return elbo.sum(dim=0)  # average over samples
 
     def log_prob(self, *obs):
         # TODO: let this be implemented as an "approximation" with ELBO
