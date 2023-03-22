@@ -1,16 +1,8 @@
 import torch
 from torch import nn
-from .utils import register_to_module, turn_to_tuple, make_args
+from .utils import register_to_module, turn_to_tuple, make_args, invoke_with_cond
 from abc import abstractmethod, ABC
-
-
-# a helper function to visit the target field
-# and invoke the field with cond if it is a nn.Module.
-# Otherwise, simply return the field content
-def parse_attr(attr, cond=None):
-    if isinstance(attr, nn.Module):
-        attr = attr(*cond)
-    return attr
+import torch.distributions as D
 
 
 # come up with a better name
@@ -119,11 +111,11 @@ class TrainableDistributionAdapter(nn.Module):
         cond = turn_to_tuple(cond)
 
         dist_args = tuple(
-            parse_attr(getattr(self, f"_arg{pos}"), cond=cond)
+            invoke_with_cond(getattr(self, f"_arg{pos}"), cond=cond)
             for pos in range(self.param_counts)
         )
         dist_kwargs = {
-            k: parse_attr(getattr(self, k), cond=cond) for k in self.param_keys
+            k: invoke_with_cond(getattr(self, k), cond=cond) for k in self.param_keys
         }
 
         # TODO: consider flipping the order of this with
@@ -146,3 +138,42 @@ class TrainableDistributionAdapter(nn.Module):
 
     def rsample(self, sample_shape=torch.Size([]), cond=None):
         return self.distribution(cond=cond).rsample(sample_shape=sample_shape)
+
+
+def wrap_with_indep(distribution_class, event_dims=1):
+    """
+    Wrap the construction of the target distribution `distr_class` with
+    D.Independent. The returned function can be used as if it is
+    a constructor for an indepdenent version of the distribution
+    """
+
+    def indep_distr(*args, **kwargs):
+        return D.Independent(distribution_class(*args, **kwargs), event_dims)
+
+    return indep_distr
+
+
+class WrappedTrainableDistribution(nn.Module):
+    def __init__(self, trainable_distribution=None):
+        super().__init__()
+        self.trainable_distribution = trainable_distribution
+
+    def forward(self, *obs, cond=None):
+        return self.trainable_distribution(*obs, cond=cond)
+
+    def log_prob(self, *obs, cond=None):
+        return self.trainable_distribution.log_prob(*obs, cond=cond)
+
+    def sample(self, sample_shape=torch.Size([]), cond=None):
+        return self.trainable_distribution.sample(sample_shape=sample_shape, cond=cond)
+
+    def rsample(self, sample_shape=torch.Size([]), cond=None):
+        return self.trainable_distribution.rsample(sample_shape=sample_shape, cond=cond)
+
+
+class IndependentNormal(WrappedTrainableDistribution):
+    def __init__(self, loc, scale, event_dims=1):
+        super().__init__()
+        self.trainable_distribution = TrainableDistributionAdapter(
+            wrap_with_indep(D.Normal, event_dims=event_dims), loc=loc, scale=scale
+        )
