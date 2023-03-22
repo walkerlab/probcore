@@ -1,17 +1,18 @@
 import torch
 from torch import nn
-from .utils import turn_to_tuple
+
 from .distributions import Joint
 from .transforms.surjective import StepQuantizer
+from .utils import turn_to_tuple
 
 
 def ELBO_joint(joint, posterior, *obs, n_samples=1):
     # Joint = p(z, x), Posterior = p(z|x)
     z_samples = posterior.rsample((n_samples,), cond=obs)
-    # take care of case where KL is known for the posterior
+    # TODO: take care of case where KL is known for the posterior
     elbo = -posterior(*turn_to_tuple(z_samples), cond=obs)
     elbo += joint(*turn_to_tuple(z_samples), *obs)
-    return elbo
+    return elbo.mean(dim=0)  # average over samples
 
 
 def ELBO_parts(prior, conditional, posterior, *obs, n_samples=1):
@@ -56,12 +57,10 @@ class ELBOMarginal(nn.Module):
 # Only difference is that conditional distribution is deterministic
 # Consider rewriting this as simple variational or as SurVAEFlow
 class VariationalDequantizedDistribution(nn.Module):
-    def __init__(
-        self, dequantized_distribution, dequantizer, quantizer=None, n_samples=1
-    ):
+    def __init__(self, prior, dequantizer, quantizer=None, n_samples=1):
         super().__init__()
         self.n_samples = n_samples
-        self.dequantized_distribution = dequantized_distribution
+        self.prior = prior
         self.dequantizer = dequantizer
 
         if quantizer is None:
@@ -76,8 +75,8 @@ class VariationalDequantizedDistribution(nn.Module):
         z_samples = self.dequantizer.rsample((self.n_samples,), cond=obs)
         elbo = -self.dequantizer(*turn_to_tuple(z_samples), cond=obs)
         # TODO: rewrite this so that quantizer can be used as is for joint & elbo
-        elbo += self.dequantized_distribution(*turn_to_tuple(z_samples))
-        return elbo.sum(dim=0)  # average over samples
+        elbo += self.prior(*turn_to_tuple(z_samples))
+        return elbo.mean(dim=0)  # average over samples
 
     def log_prob(self, *obs):
         # TODO: let this be implemented as an "approximation" with ELBO
@@ -85,13 +84,9 @@ class VariationalDequantizedDistribution(nn.Module):
         pass
 
     def sample(self, sample_shape=torch.Size([]), cond=None):
-        samples = self.dequantized_distribution.sample(
-            sample_shape=sample_shape, cond=cond
-        )
+        samples = self.prior.sample(sample_shape=sample_shape, cond=cond)
         return self.quantizer(samples)
 
     def rsample(self, sample_shape=torch.Size([]), cond=None):
-        samples = self.dequantized_distribution.rsample(
-            sample_shape=sample_shape, cond=cond
-        )
+        samples = self.prior.rsample(sample_shape=sample_shape, cond=cond)
         return self.quantizer(samples)
