@@ -17,14 +17,14 @@ class SequentialTransform(nn.Module):
     def forward(self, x, cond=None):
         logL = 0
         for t in self.transforms:
-            x, logDet = t(x, cond=cond)
+            x, logDet = t.forward(x, cond=cond)
             logL += logDet
         return x, logL
 
     def inverse(self, y, cond=None):
         logL = 0
         for t in self.transforms[::-1]:
-            y, logDet = t(y, cond=cond)
+            y, logDet = t.inverse(y, cond=cond)
             logL += logDet
         return y, logL
 
@@ -48,11 +48,11 @@ class ConditionalShift(nn.Module):
 
     def forward(self, x, cond=None):
         x = x + invoke_with_cond(self.conditional_shift, cond=cond)
-        return x, torch.zeros_like(x)
+        return x, 0
 
     def inverse(self, x, cond=None):
         x = x - invoke_with_cond(self.conditional_shift, cond=cond)
-        return x, torch.zeros_like(x)
+        return x, 0
 
 
 # # conceptual template
@@ -90,7 +90,7 @@ class MarginalTransform(nn.Module):
         # TODO: deal with passing the cond through
         return self.marginal_forward(x), self.get_log_det(x).sum(dim=self.dim)
 
-    def inverse(self, y):
+    def inverse(self, y, cond=None):
         x = self.marginal_inverse(y)
         return x, -self.get_log_det(x)
 
@@ -109,7 +109,9 @@ class ELU(MarginalTransform):
     def marginal_inverse(self, y, cond=None):
         # TODO: check if use of finfo is meaningful
         finfo = torch.finfo(y.dtype)
-        return torch.where(y > 0, y, (y / self.alpha + 1).clamp(min=finfo.tiny))
+        return torch.where(
+            y > 0, y, torch.log((y / self.alpha + 1).clamp(min=finfo.tiny))
+        )
 
 
 class OffsetELU(nn.Module):
@@ -133,8 +135,7 @@ class ELUplus1(OffsetELU):
 
 class Log(MarginalTransform):
     def get_log_det(self, x):
-        # TODO: deal with dim not being just -1
-        return torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny)).log()
+        return -torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny))
 
     def marginal_forward(self, x, cond=None):
         return x.clamp(min=torch.finfo(x.dtype).tiny).log()
@@ -237,6 +238,7 @@ class Tanh(MarginalTransform):
 
 
 class Sigmoid(MarginalTransform):
+    # TODO: implement scaling and also top & bottom offset
     def get_log_det(self, x):
         return -F.softplus(-x) - F.softplus(x)
 
