@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from warnings import warn
 import math
+import numpy as np
 from ..utils import invoke_with_cond
 
 
@@ -86,8 +87,9 @@ class MarginalTransform(nn.Module):
     def get_log_det(self, x):
         pass
 
-    def forward(self, x):
-        return self.marginal_forward(x).sum(dim=self.dim), self.get_log_det(x)
+    def forward(self, x, cond=None):
+        # TODO: deal with passing the cond through
+        return self.marginal_forward(x), self.get_log_det(x).sum(dim=self.dim)
 
     def inverse(self, y):
         x = self.marginal_inverse(y)
@@ -100,9 +102,7 @@ class ELU(MarginalTransform):
         self.alpha = alpha
 
     def get_log_det(self, x):
-        return torch.where(
-            x > 0, torch.zeros(1).to(x.device), x + torch.log(self.alpha)
-        )
+        return torch.where(x > 0, torch.zeros(1).to(x.device), x + math.log(self.alpha))
 
     def marginal_forward(self, x, cond=None):
         return F.elu(x, self.alpha)
@@ -135,7 +135,7 @@ class ELUplus1(OffsetELU):
 class Log(MarginalTransform):
     def get_log_det(self, x):
         # TODO: deal with dim not being just -1
-        return torch.log(x.abs().clamp(min=torch.finfo(x.dtype).tiny)).log()
+        return torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny)).log()
 
     def marginal_forward(self, x, cond=None):
         return x.clamp(min=torch.finfo(x.dtype).tiny).log()
@@ -165,7 +165,7 @@ class IndependentAffine(MarginalTransform):
 
     def get_log_det(self, x):
         return torch.log(
-            torch.abs(self.weight) + torch.finfo(self.weight.dtype).tiny
+            abs(self.weight) + torch.finfo(self.weight.dtype).tiny
         ) * torch.ones_like(x)
 
     def marginal_forward(self, x):
@@ -177,9 +177,11 @@ class IndependentAffine(MarginalTransform):
 
 class Pow(MarginalTransform):
     def get_log_det(self, x):
-        return torch.log(self.exponent.abs() + torch.finfo(x.dtype).tiny) + (
-            self.exponent - 1
-        ) * torch.log(x.abs() + torch.finfo(x.dtype).tiny)
+        # TODO: deal with number/tensor conversion better here
+        # currently using torch.zeros to ensure sum is a tensor
+        return torch.log(
+            torch.zeros([]) + abs(self.exponent) + torch.finfo(x.dtype).tiny
+        ) + (self.exponent - 1) * torch.log(abs(x) + torch.finfo(x.dtype).tiny)
 
     def __init__(self, exponent, dim=-1):
         super().__init__(dim=dim)
@@ -195,7 +197,7 @@ class Pow(MarginalTransform):
 class Sqrt(MarginalTransform):
     def get_log_det(self, x):
         # TODO: replace with torch.log
-        return -math.log(2.0) - 0.5 * torch.log(x.abs() + torch.finfo(x.dtype).tiny)
+        return -math.log(2.0) - 0.5 * torch.log(abs(x) + torch.finfo(x.dtype).tiny)
 
     def marginal_forward(self, x):
         # TODO: Evaluate if this clamping is a good idea
