@@ -7,7 +7,7 @@ from torch import nn
 # Otherwise, simply return the field content
 def invoke_with_cond(attr, cond=None):
     if isinstance(attr, nn.Module):
-        attr = attr(*cond)
+        attr = attr(*turn_to_tuple(cond))
     return attr
 
 
