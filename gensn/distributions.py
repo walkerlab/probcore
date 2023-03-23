@@ -220,8 +220,20 @@ class WrappedTrainableDistribution(nn.Module):
 
 
 class IndependentNormal(WrappedTrainableDistribution):
-    def __init__(self, loc, scale, event_dims=1):
+    def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
         super().__init__()
+        if (loc is None or scale is None) and _parameters is None:
+            raise ValueError(
+                "If eiteher loc or scale is unspecificed, _parameters must be provided"
+            )
+        kwargs = {}
+        if loc is not None:
+            kwargs["loc"] = loc
+        if scale is not None:
+            kwargs["scale"] = scale
         self.trainable_distribution = IndependentTrainableDistributionAdapter(
-            D.Normal, event_dims=event_dims, loc=loc, scale=scale
+            D.Normal,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
         )
