@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+
 from .utils import turn_to_tuple
 
 
@@ -8,6 +9,10 @@ class FlowDistribution(nn.Module):
         super().__init__()
         self.base_distribution = base_distribution
         self.transform = transform
+
+    @property
+    def n_rvs(self):
+        return self.base_distribution.n_rvs
 
     def forward(self, *obs, cond=None):
         return self.log_prob(*obs, cond=cond)

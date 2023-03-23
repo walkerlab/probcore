@@ -29,8 +29,11 @@ class ELBOMarginal(nn.Module):
         self.joint = joint
         self.posterior = posterior
         # infer how many variables are in observations
-        self.n_rvs = joint.n_rvs - posterior.n_rvs
         self.n_samples = n_samples
+
+    @property
+    def n_rvs(self):
+        return self.joint.n_rvs - self.posterior.n_rvs
 
     def forward(self, *obs, cond=None):
         return self.elbo(*obs, cond=cond)
@@ -67,6 +70,10 @@ class VariationalDequantizedDistribution(nn.Module):
             # default to UnitQuantizer
             quantizer = StepQuantizer()
         self.quantizer = quantizer
+
+    @property
+    def n_rvs(self):
+        return self.prior.n_rvs
 
     def forward(self, *obs, cond=None):
         return self.elbo(*obs, cond=cond)

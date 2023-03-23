@@ -15,12 +15,13 @@ class Joint(nn.Module):
         super().__init__()
         self.prior = prior
         self.conditional = conditional
-        self.split = self.prior.n_rvs
-        self.n_rvs = self.prior.n_rvs + self.conditional.n_rvs
+
+    @property
+    def n_rvs(self):
+        return self.prior.n_rvs + self.conditional.n_rvs
 
     def log_prob(self, *obs, cond=None):
-        # TODO: maybe just use self.prior.n_rvs
-        x, y = obs[: self.split], obs[self.split :]
+        x, y = obs[: self.prior.n_rvs], obs[self.prior.n_rvs :]
         return self.prior(*x, cond=cond) + self.conditional(*y, cond=x)
 
     def forward(self, *obs, cond=None):
@@ -200,6 +201,10 @@ class WrappedTrainableDistribution(nn.Module):
     def __init__(self, trainable_distribution=None):
         super().__init__()
         self.trainable_distribution = trainable_distribution
+
+    @property
+    def n_rvs(self):
+        return self.trainable_distribution.n_rvs
 
     def forward(self, *obs, cond=None):
         return self.trainable_distribution(*obs, cond=cond)
