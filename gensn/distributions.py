@@ -15,12 +15,13 @@ class Joint(nn.Module):
         super().__init__()
         self.prior = prior
         self.conditional = conditional
-        self.split = self.prior.n_rvs
-        self.n_rvs = self.prior.n_rvs + self.conditional.n_rvs
+
+    @property
+    def n_rvs(self):
+        return self.prior.n_rvs + self.conditional.n_rvs
 
     def log_prob(self, *obs, cond=None):
-        # TODO: maybe just use self.prior.n_rvs
-        x, y = obs[: self.split], obs[self.split :]
+        x, y = obs[: self.prior.n_rvs], obs[self.prior.n_rvs :]
         return self.prior(*x, cond=cond) + self.conditional(*y, cond=x)
 
     def forward(self, *obs, cond=None):
@@ -201,6 +202,10 @@ class WrappedTrainableDistribution(nn.Module):
         super().__init__()
         self.trainable_distribution = trainable_distribution
 
+    @property
+    def n_rvs(self):
+        return self.trainable_distribution.n_rvs
+
     def forward(self, *obs, cond=None):
         return self.trainable_distribution(*obs, cond=cond)
 
@@ -215,8 +220,20 @@ class WrappedTrainableDistribution(nn.Module):
 
 
 class IndependentNormal(WrappedTrainableDistribution):
-    def __init__(self, loc, scale, event_dims=1):
+    def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
         super().__init__()
+        if (loc is None or scale is None) and _parameters is None:
+            raise ValueError(
+                "If eiteher loc or scale is unspecificed, _parameters must be provided"
+            )
+        kwargs = {}
+        if loc is not None:
+            kwargs["loc"] = loc
+        if scale is not None:
+            kwargs["scale"] = scale
         self.trainable_distribution = IndependentTrainableDistributionAdapter(
-            D.Normal, event_dims=event_dims, loc=loc, scale=scale
+            D.Normal,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
         )

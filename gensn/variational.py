@@ -3,7 +3,7 @@ from torch import nn
 
 from .distributions import Joint
 from .transforms.surjective import StepQuantizer
-from .utils import turn_to_tuple
+from .utils import squeeze_tuple, turn_to_tuple
 
 
 def ELBO_joint(joint, posterior, *obs, n_samples=1):
@@ -29,8 +29,11 @@ class ELBOMarginal(nn.Module):
         self.joint = joint
         self.posterior = posterior
         # infer how many variables are in observations
-        self.n_rvs = joint.n_rvs - posterior.n_rvs
         self.n_samples = n_samples
+
+    @property
+    def n_rvs(self):
+        return self.joint.n_rvs - self.posterior.n_rvs
 
     def forward(self, *obs, cond=None):
         return self.elbo(*obs, cond=cond)
@@ -46,16 +49,18 @@ class ELBOMarginal(nn.Module):
 
     def sample(self, sample_shape=torch.Size([]), cond=None):
         samples = self.joint.sample(sample_shape=sample_shape, cond=cond)
-        return samples[-self.n_rvs :]
+        return squeeze_tuple(samples[-self.n_rvs :])
 
     def rsample(self, sample_shape=torch.Size([]), cond=None):
         samples = self.joint.rsample(sample_shape=sample_shape, cond=cond)
-        return samples[-self.n_rvs :]
+        return squeeze_tuple(samples[-self.n_rvs :])
 
 
 # TODO: this is really no different from simple variational marginal
 # Only difference is that conditional distribution is deterministic
 # Consider rewriting this as simple variational or as SurVAEFlow
+# TODO: this only works in the case where n_rvs = 1
+# this is because of the way Quantizer works
 class VariationalDequantizedDistribution(nn.Module):
     def __init__(self, prior, dequantizer, quantizer=None, n_samples=1):
         super().__init__()
@@ -67,6 +72,10 @@ class VariationalDequantizedDistribution(nn.Module):
             # default to UnitQuantizer
             quantizer = StepQuantizer()
         self.quantizer = quantizer
+
+    @property
+    def n_rvs(self):
+        return self.prior.n_rvs
 
     def forward(self, *obs, cond=None):
         return self.elbo(*obs, cond=cond)

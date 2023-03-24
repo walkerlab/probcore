@@ -47,3 +47,9 @@ def make_args(x, *args, **kwargs):
         args = (x,) + args
 
     return args, kwargs
+
+
+def squeeze_tuple(x):
+    if isinstance(x, tuple) and len(x) == 1:
+        return x[0]
+    return x
