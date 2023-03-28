@@ -224,7 +224,7 @@ class IndependentNormal(WrappedTrainableDistribution):
         super().__init__()
         if (loc is None or scale is None) and _parameters is None:
             raise ValueError(
-                "If eiteher loc or scale is unspecificed, _parameters must be provided"
+                "If either loc or scale is unspecificed, _parameters must be provided"
             )
         kwargs = {}
         if loc is not None:
@@ -233,6 +233,62 @@ class IndependentNormal(WrappedTrainableDistribution):
             kwargs["scale"] = scale
         self.trainable_distribution = IndependentTrainableDistributionAdapter(
             D.Normal,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+class IndependentGamma(WrappedTrainableDistribution):
+    def __init__(self, concentration=None, rate=None, _parameters=None, event_dims=1):
+        super().__init__()
+        if (concentration is None or rate is None) and _parameters is None:
+            raise ValueError(
+                "If either concentration or rate is unspecificed, _parameters must be provided"
+            )
+        kwargs = {}
+        if concentration is not None:
+            kwargs["concentration"] = concentration
+        if rate is not None:
+            kwargs["rate"] = rate
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.Gamma,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+class IndependentLaplace(WrappedTrainableDistribution):
+    def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
+        super().__init__()
+        if (loc is None or scale is None) and _parameters is None:
+            raise ValueError(
+                "If either loc or scale is unspecificed, _parameters must be provided"
+            )
+        kwargs = {}
+        if loc is not None:
+            kwargs["loc"] = loc
+        if scale is not None:
+            kwargs["scale"] = scale
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.Laplace,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+class IndependentExponential(WrappedTrainableDistribution):
+    def __init__(self, rate=None, _parameters=None, event_dims=1):
+        super().__init__()
+        if rate is None and _parameters is None:
+            raise ValueError("If rate is unspecificed, _parameters must be provided")
+        kwargs = {}
+        if rate is not None:
+            kwargs["rate"] = rate
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.Exponential,
             event_dims=event_dims,
             **kwargs,
             _parameters=_parameters,
