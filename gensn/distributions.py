@@ -293,3 +293,39 @@ class IndependentExponential(WrappedTrainableDistribution):
             **kwargs,
             _parameters=_parameters,
         )
+
+
+class IndependentHalfNormal(WrappedTrainableDistribution):
+    def __init__(self, scale=None, _parameters=None, event_dims=1):
+        super().__init__()
+        if scale is None and _parameters is None:
+            raise ValueError("If scale is unspecificed, _parameters must be provided")
+        kwargs = {}
+        if scale is not None:
+            kwargs["scale"] = scale
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.HalfNormal,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+class IndependentLogNormal(WrappedTrainableDistribution):
+    def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
+        super().__init__()
+        if (loc is None or scale is None) and _parameters is None:
+            raise ValueError(
+                "If either loc or scale is unspecificed, _parameters must be provided"
+            )
+        kwargs = {}
+        if loc is not None:
+            kwargs["loc"] = loc
+        if scale is not None:
+            kwargs["scale"] = scale
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.LogNormal,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
