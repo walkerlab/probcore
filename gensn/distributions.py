@@ -220,7 +220,23 @@ class WrappedTrainableDistribution(nn.Module):
 
 
 class IndependentNormal(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.Normal) distribution
+    """
+
     def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            loc : torch.Tensor or nn.Parameter or None
+                The mean of the normal distribution. If None, _parameters must be provided
+            scale : torch.Tensor or nn.Parameter or None
+                The standard deviation of the normal distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the normal distribution. If None, loc and scale must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
         super().__init__()
         if (loc is None or scale is None) and _parameters is None:
             raise ValueError(
@@ -240,7 +256,23 @@ class IndependentNormal(WrappedTrainableDistribution):
 
 
 class IndependentGamma(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.Gamma) distribution
+    """
+
     def __init__(self, concentration=None, rate=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            concentration : torch.Tensor or nn.Parameter or None
+                The concentration parameter of the gamma distribution. If None, _parameters must be provided
+            rate : torch.Tensor or nn.Parameter or None
+                The rate parameter of the gamma distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the gamma distribution. If None, concentration and rate must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
         super().__init__()
         if (concentration is None or rate is None) and _parameters is None:
             raise ValueError(
@@ -260,7 +292,23 @@ class IndependentGamma(WrappedTrainableDistribution):
 
 
 class IndependentLaplace(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.Laplace) distribution
+    """
+
     def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            loc : torch.Tensor or nn.Parameter or None
+                The mean of the laplace distribution. If None, _parameters must be provided
+            scale : torch.Tensor or nn.Parameter or None
+                The scale parameter of the laplace distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the laplace distribution. If None, loc and scale must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
         super().__init__()
         if (loc is None or scale is None) and _parameters is None:
             raise ValueError(
@@ -280,7 +328,21 @@ class IndependentLaplace(WrappedTrainableDistribution):
 
 
 class IndependentExponential(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.Exponential) distribution
+    """
+
     def __init__(self, rate=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            rate : torch.Tensor or nn.Parameter or None
+                The rate parameter of the exponential distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the exponential distribution. If None, rate must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
         super().__init__()
         if rate is None and _parameters is None:
             raise ValueError("If rate is unspecificed, _parameters must be provided")
@@ -289,6 +351,72 @@ class IndependentExponential(WrappedTrainableDistribution):
             kwargs["rate"] = rate
         self.trainable_distribution = IndependentTrainableDistributionAdapter(
             D.Exponential,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+class IndependentHalfNormal(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.HalfNormal) distribution
+    """
+
+    def __init__(self, scale=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            scale : torch.Tensor or nn.Parameter or None
+                The scale parameter of the half normal distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the half normal distribution. If None, scale must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
+        super().__init__()
+        if scale is None and _parameters is None:
+            raise ValueError("If scale is unspecificed, _parameters must be provided")
+        kwargs = {}
+        if scale is not None:
+            kwargs["scale"] = scale
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.HalfNormal,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+class IndependentLogNormal(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.LogNormal) distribution
+    """
+
+    def __init__(self, loc=None, scale=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            loc : torch.Tensor or nn.Parameter or None
+                The mean of the log normal distribution. If None, _parameters must be provided
+            scale : torch.Tensor or nn.Parameter or None
+                The scale parameter of the log normal distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the log normal distribution. If None, loc and scale must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
+        super().__init__()
+        if (loc is None or scale is None) and _parameters is None:
+            raise ValueError(
+                "If either loc or scale is unspecificed, _parameters must be provided"
+            )
+        kwargs = {}
+        if loc is not None:
+            kwargs["loc"] = loc
+        if scale is not None:
+            kwargs["scale"] = scale
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.LogNormal,
             event_dims=event_dims,
             **kwargs,
             _parameters=_parameters,
