@@ -72,9 +72,15 @@ class ConditionalShift(nn.Module):
         x = x + invoke_with_cond(self.conditional_shift, cond=cond)
         return x, 0
 
+    def factorized_forward(self, x, cond=None):
+        return self(x, cond=cond)
+
     def inverse(self, x, cond=None):
         x = x - invoke_with_cond(self.conditional_shift, cond=cond)
         return x, 0
+
+    def factorized_inverse(self, x, cond=None):
+        return self.inverse(x, cond=cond)
 
 
 # # conceptual template
@@ -144,27 +150,39 @@ class IndependentAffine(FactorizedTransform):
 
 
 class ELU(FactorizedTransform):
-    def __init__(self, alpha=1.0, offset=0.0, dim=-1):
+    def __init__(self, alpha=1.0, dim=-1):
         super().__init__(dim=dim)
         self.alpha = alpha
-        self.offset = offset
 
     def get_log_det(self, x, cond=None):
         return torch.where(x > 0, torch.zeros(1).to(x.device), x + math.log(self.alpha))
 
     def factorized_transform(self, x, cond=None):
-        return F.elu(x, self.alpha) + self.offset
+        return F.elu(x, self.alpha)
 
     def factorized_inverse_transform(self, y, cond=None):
         # TODO: check if use of finfo is meaningful
         finfo = torch.finfo(y.dtype)
-        y = y - self.offset
         return torch.where(
             y > 0, y, torch.log((y / self.alpha + 1).clamp(min=finfo.tiny))
         )
 
 
-class ELUplus1(ELU):
+class OffsetELU(nn.Module):
+    def __init__(self, alpha=1.0, offset=0.0, dim=-1):
+        super().__init__()
+        self.elu = ELU(alpha, dim=dim)
+        self.offset = offset
+
+    def forward(self, x, cond=None):
+        y, logL = self.elu(x, cond=cond)
+        return y + self.offset, logL
+
+    def inverse(self, y, cond=None):
+        return self.elu.inverse(y - self.offset, cond=cond)
+
+
+class ELUplus1(OffsetELU):
     def __init__(self, alpha=1.0, dim=-1):
         super().__init__(alpha=alpha, offset=1.0, dim=dim)
 
