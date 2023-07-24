@@ -421,3 +421,33 @@ class IndependentLogNormal(WrappedTrainableDistribution):
             **kwargs,
             _parameters=_parameters,
         )
+
+
+class IndependentPoisson(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.Poisson) distribution
+    """
+
+    def __init__(self, rate=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            rate : torch.Tensor or nn.Parameter or None
+                The rate parameter of the poisson distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the poisson distribution. If None, rate must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
+        super().__init__()
+        if rate is None and _parameters is None:
+            raise ValueError("If rate is unspecificed, _parameters must be provided")
+        kwargs = {}
+        if rate is not None:
+            kwargs["rate"] = rate
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.Poisson,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
