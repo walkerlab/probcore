@@ -30,6 +30,20 @@ class SequentialTransform(nn.Module):
             logL += logDet
         return y, logL
 
+    def factorized_forward(self, x, cond=None):
+        logL = 0
+        for t in self.transforms:
+            x, logDet = t.factorized_forward(x, cond=cond)
+            logL += logDet
+        return x, logL
+
+    def factorized_inverse(self, y, cond=None):
+        logL = 0
+        for t in self.transforms[::-1]:
+            y, logDet = t.factorized_inverse(y, cond=cond)
+            logL += logDet
+        return y, logL
+
 
 class InverseTransform(nn.Module):
     def __init__(self, transform):
@@ -42,6 +56,12 @@ class InverseTransform(nn.Module):
     def inverse(self, y, cond=None):
         return self.transform.forward(y, cond=cond)
 
+    def factorized_forward(self, x, cond=None):
+        return self.transform.factorized_inverse(x, cond=cond)
+
+    def factorized_inverse(self, y, cond=None):
+        return self.transform.factorized_forward(y, cond=cond)
+
 
 class ConditionalShift(nn.Module):
     def __init__(self, conditional_shift):
@@ -52,9 +72,15 @@ class ConditionalShift(nn.Module):
         x = x + invoke_with_cond(self.conditional_shift, cond=cond)
         return x, 0
 
+    def factorized_forward(self, x, cond=None):
+        return self(x, cond=cond)
+
     def inverse(self, x, cond=None):
         x = x - invoke_with_cond(self.conditional_shift, cond=cond)
         return x, 0
+
+    def factorized_inverse(self, x, cond=None):
+        return self.inverse(x, cond=cond)
 
 
 # # conceptual template
@@ -66,11 +92,11 @@ class ConditionalShift(nn.Module):
 #         return x, logL - log_det_f_prime
 
 
-class MarginalTransform(nn.Module):
-    """Defines marginal transform template"""
+class FactorizedTransform(nn.Module):
+    """Defines factorized transform template"""
 
     def __init__(self, dim=-1):
-        """Initialize the marginal transform. Specify the dimension to be
+        """Initialize the factorized transform. Specify the dimension to be
         collapsed over when computing the log determinant.
 
         Args:
@@ -79,55 +105,62 @@ class MarginalTransform(nn.Module):
         super().__init__()
         self.dim = dim
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         pass
 
-    def marginal_inverse(self, y):
+    def factorized_inverse_transform(self, y, cond=None):
         pass
 
-    def get_log_det(self, x):
+    def get_log_det(self, x, cond=None):
         pass
+
+    def factorized_forward(self, x, cond=None):
+        return self.factorized_transform(x, cond=cond), self.get_log_det(x, cond=cond)
 
     def forward(self, x, cond=None):
-        # TODO: deal with passing the cond through
-        return self.marginal_forward(x), self.get_log_det(x).sum(dim=self.dim)
+        y, log_det = self.factorized_forward(x, cond=cond)
+        return y, log_det.sum(dim=self.dim)
+
+    def factorized_inverse(self, y, cond=None):
+        x = self.factorized_inverse_transform(y, cond=cond)
+        return x, -self.get_log_det(x, cond=cond)
 
     def inverse(self, y, cond=None):
-        x = self.marginal_inverse(y)
-        return x, -self.get_log_det(x).sum(dim=self.dim)
+        x, log_det = self.factorized_inverse(y, cond=cond)
+        return x, log_det.sum(dim=self.dim)
 
 
-class IndependentAffine(MarginalTransform):
+class IndependentAffine(FactorizedTransform):
     def __init__(self, input_dim=1, dim=-1):
         super().__init__(dim=dim)
         self.input_dim = input_dim
         self.weight = nn.Parameter(torch.empty(input_dim))
         self.bias = nn.Parameter(torch.empty(input_dim))
 
-    def get_log_det(self, x):
+    def get_log_det(self, x, cond=None):
         return torch.log(
             abs(self.weight) + torch.finfo(self.weight.dtype).tiny
         ) * torch.ones_like(x)
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         return x * self.weight + self.bias
 
-    def marginal_inverse(self, y):
-        return (y - self.bias) / self.weight
+    def factorized_inverse_transform(self, y, cond=None):
+        return (y - self.bias) / (self.weight + torch.finfo(self.weight.dtype).tiny)
 
 
-class ELU(MarginalTransform):
+class ELU(FactorizedTransform):
     def __init__(self, alpha=1.0, dim=-1):
         super().__init__(dim=dim)
         self.alpha = alpha
 
-    def get_log_det(self, x):
+    def get_log_det(self, x, cond=None):
         return torch.where(x > 0, torch.zeros(1).to(x.device), x + math.log(self.alpha))
 
-    def marginal_forward(self, x, cond=None):
+    def factorized_transform(self, x, cond=None):
         return F.elu(x, self.alpha)
 
-    def marginal_inverse(self, y, cond=None):
+    def factorized_inverse_transform(self, y, cond=None):
         # TODO: check if use of finfo is meaningful
         finfo = torch.finfo(y.dtype)
         return torch.where(
@@ -154,99 +187,99 @@ class ELUplus1(OffsetELU):
         super().__init__(alpha=alpha, offset=1.0, dim=dim)
 
 
-class Softplus(MarginalTransform):
-    def get_log_det(self, x):
+class Softplus(FactorizedTransform):
+    def get_log_det(self, x, cond=None):
         # TODO: get the implementation for softplus
         return -F.softplus(-x)
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         return F.softplus(x)
 
-    def marginal_inverse(self, y):
+    def factorized_inverse_transform(self, y, cond=None):
         # TODO: consider providing inverse_softplus
         return (-y).expm1().neg().clamp(min=torch.finfo(y.dtype).tiny).log() + y
 
 
-class Exp(MarginalTransform):
-    def get_log_det(self, x):
+class Exp(FactorizedTransform):
+    def get_log_det(self, x, cond=None):
         return x
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         return x.exp()
 
-    def marginal_inverse(self, y):
+    def factorized_inverse_transform(self, y, cond=None):
         return y.clamp(min=torch.finfo(y.dtype).tiny).log()
 
 
-class Tanh(MarginalTransform):
-    def get_log_det(self, x):
+class Tanh(FactorizedTransform):
+    def get_log_det(self, x, cond=None):
         # using numerically stable formula from TF implementation:
         # https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/bijectors/tanh.py#L69-L80
         return 2.0 * (math.log(2.0) - x - F.softplus(-2.0 * x))
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         return torch.tanh(x)
 
     # switchable safeguarding?
     # publicized?
     # this is silently failing for atanh out of bounds inputs
-    def marginal_inverse(self, y):
+    def factorized_inverse_transform(self, y, cond=None):
         eps = torch.finfo(y.dtype).eps
         return y.clamp(min=-1 + eps, max=1 - eps).atanh()
 
 
-class Sigmoid(MarginalTransform):
+class Sigmoid(FactorizedTransform):
     # TODO: implement scaling and also top & bottom offset
-    def get_log_det(self, x):
+    def get_log_det(self, x, cond=None):
         return -F.softplus(-x) - F.softplus(x)
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         return torch.sigmoid(x)
 
-    def marginal_inverse(self, y):
+    def factorized_inverse_transform(self, y, cond=None):
         finfo = torch.finfo(y.dtype)
         y = torch.clamp(y, min=finfo.tiny, max=1.0 - finfo.eps)
         return y.log() - (-y).log1p()
 
 
-class Log(MarginalTransform):
-    def get_log_det(self, x):
+class Log(FactorizedTransform):
+    def get_log_det(self, x, cond=None):
         return -torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny))
 
-    def marginal_forward(self, x, cond=None):
+    def factorized_forward(self, x, cond=None):
         return x.clamp(min=torch.finfo(x.dtype).tiny).log()
 
-    def marginal_inverse(self, y, cond=None):
+    def factorized_inverse_transform(self, y, cond=None):
         return y.exp()
 
 
-class Pow(MarginalTransform):
-    def get_log_det(self, x):
+class Pow(FactorizedTransform):
+    def __init__(self, exponent, dim=-1):
+        super().__init__(dim=dim)
+        self.exponent = exponent
+
+    def get_log_det(self, x, cond=None):
         # TODO: deal with number/tensor conversion better here
         # currently using torch.zeros to ensure sum is a tensor
         return torch.log(
             torch.zeros([]) + abs(self.exponent) + torch.finfo(x.dtype).tiny
         ) + (self.exponent - 1) * torch.log(abs(x) + torch.finfo(x.dtype).tiny)
 
-    def __init__(self, exponent, dim=-1):
-        super().__init__(dim=dim)
-        self.exponent = exponent
-
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         return x.pow(self.exponent)
 
-    def marginal_inverse(self, y):
+    def factorized_inverse_transform(self, y, cond=None):
         return y.pow(1 / (self.exponent + torch.finfo(y.dtype).tiny))
 
 
-class Sqrt(MarginalTransform):
-    def get_log_det(self, x):
+class Sqrt(FactorizedTransform):
+    def get_log_det(self, x, cond=None):
         # TODO: replace with torch.log
         return -math.log(2.0) - 0.5 * torch.log(abs(x) + torch.finfo(x.dtype).tiny)
 
-    def marginal_forward(self, x):
+    def factorized_transform(self, x, cond=None):
         # TODO: Evaluate if this clamping is a good idea
         return x.clamp(min=0).sqrt()
 
-    def marginal_inverse(self, z):
+    def factorized_inverse_transform(self, z, cond=None):
         return z.pow(2)

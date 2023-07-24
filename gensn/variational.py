@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 
@@ -35,12 +36,19 @@ class ELBOMarginal(nn.Module):
     def n_rvs(self):
         return self.joint.n_rvs - self.posterior.n_rvs
 
-    def forward(self, *obs, cond=None):
-        return self.elbo(*obs, cond=cond)
+    def forward(self, *obs, cond=None, n_samples=None):
+        return self.elbo(*obs, cond=cond, n_samples=n_samples)
 
-    def elbo(self, *obs, cond=None):
+    def elbo(self, *obs, cond=None, n_samples=None):
         # TODO: deal with conditioning correctly
-        return ELBO_joint(self.joint, self.posterior, *obs, n_samples=self.n_samples)
+        if n_samples is None:
+            n_samples = self.n_samples
+        return ELBO_joint(
+            self.joint,
+            self.posterior,
+            *obs,
+            n_samples=n_samples,
+        )
 
     def log_prob(self, *obs):
         # TODO: let this be implemented as an "approximation" with ELBO
@@ -77,19 +85,57 @@ class VariationalDequantizedDistribution(nn.Module):
     def n_rvs(self):
         return self.prior.n_rvs
 
-    def forward(self, *obs, cond=None):
-        return self.elbo(*obs, cond=cond)
+    def forward(self, *obs, cond=None, n_samples=None):
+        return self.elbo(*obs, cond=cond, n_samples=n_samples)
 
-    def elbo(self, *obs, cond=None):
-        z_samples = self.dequantizer.rsample((self.n_samples,), cond=obs)
+    def elbo(self, *obs, cond=None, n_samples=None):
+        if n_samples is None:
+            n_samples = self.n_samples
+        z_samples = self.dequantizer.rsample((n_samples,), cond=obs)
         elbo = -self.dequantizer(*turn_to_tuple(z_samples), cond=obs)
         # TODO: rewrite this so that quantizer can be used as is for joint & elbo
         elbo += self.prior(*turn_to_tuple(z_samples))
         return elbo.mean(dim=0)  # average over samples
 
+    def factorized_elbo(self, *obs, cond=None, n_samples=None):
+        if n_samples is None:
+            n_samples = self.n_samples
+        z_samples = self.dequantizer.rsample((n_samples,), cond=obs)
+        log_prob_posterior = self.dequantizer.factorized_log_prob(
+            *turn_to_tuple(z_samples), cond=obs
+        )
+        log_prob_prior = self.prior.factorized_log_prob(*turn_to_tuple(z_samples))
+        elbo = log_prob_prior - log_prob_posterior
+        return elbo.mean(dim=0)  # average over samples
+
+    def iw_bound(self, *obs, cond=None, n_samples=None):
+        if n_samples is None:
+            n_samples = self.n_samples
+        z_samples = self.dequantizer.rsample((n_samples,), cond=obs)
+        log_prob_posterior = self.dequantizer(*turn_to_tuple(z_samples), cond=obs)
+        log_prob_prior = self.prior(*turn_to_tuple(z_samples))
+        return torch.logsumexp(log_prob_prior - log_prob_posterior, dim=0) - np.log(
+            n_samples
+        )  # average over samples
+
+    def factorized_iw_bound(self, *obs, cond=None, n_samples=None):
+        if n_samples is None:
+            n_samples = self.n_samples
+        z_samples = self.dequantizer.rsample((n_samples,), cond=obs)
+        log_prob_posterior = self.dequantizer.factorized_log_prob(
+            *turn_to_tuple(z_samples), cond=obs
+        )
+        log_prob_prior = self.prior.factorized_log_prob(*turn_to_tuple(z_samples))
+        return torch.logsumexp(log_prob_prior - log_prob_posterior, dim=0) - np.log(
+            n_samples
+        )  # average over samples
+
     def log_prob(self, *obs):
         # TODO: let this be implemented as an "approximation" with ELBO
         # but with ample warnings
+        pass
+
+    def factorized_log_prob(self, *obs):
         pass
 
     def sample(self, sample_shape=torch.Size([]), cond=None):
