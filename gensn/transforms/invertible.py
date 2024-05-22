@@ -130,25 +130,6 @@ class FactorizedTransform(nn.Module):
         return x, log_det.sum(dim=self.dim)
 
 
-class IndependentAffine(FactorizedTransform):
-    def __init__(self, input_dim=1, dim=-1):
-        super().__init__(dim=dim)
-        self.input_dim = input_dim
-        self.weight = nn.Parameter(torch.empty(input_dim))
-        self.bias = nn.Parameter(torch.empty(input_dim))
-
-    def get_log_det(self, x, cond=None):
-        return torch.log(
-            abs(self.weight) + torch.finfo(self.weight.dtype).tiny
-        ) * torch.ones_like(x)
-
-    def factorized_transform(self, x, cond=None):
-        return x * self.weight + self.bias
-
-    def factorized_inverse_transform(self, y, cond=None):
-        return (y - self.bias) / (self.weight + torch.finfo(self.weight.dtype).tiny)
-
-
 class ELU(FactorizedTransform):
     def __init__(self, alpha=1.0, dim=-1):
         super().__init__(dim=dim)
@@ -283,3 +264,41 @@ class Sqrt(FactorizedTransform):
 
     def factorized_inverse_transform(self, z, cond=None):
         return z.pow(2)
+
+
+class IndependentAffine(FactorizedTransform):
+    def __init__(self, input_dim=1, dim=-1):
+        super().__init__(dim=dim)
+        self.input_dim = input_dim
+        self.weight = nn.Parameter(torch.empty(input_dim))
+        self.bias = nn.Parameter(torch.empty(input_dim))
+
+    def get_log_det(self, x, cond=None):
+        return torch.log(
+            abs(self.weight) + torch.finfo(self.weight.dtype).tiny
+        ) * torch.ones_like(x)
+
+    def factorized_transform(self, x, cond=None):
+        return x * self.weight + self.bias
+
+    def factorized_inverse_transform(self, y, cond=None):
+        return (y - self.bias) / (self.weight + torch.finfo(self.weight.dtype).tiny)
+
+
+class Affine(nn.Module):
+    def __init__(self, input_dim=1):
+        super().__init__()
+        self.input_dim = input_dim
+        self.weight = nn.Parameter(torch.empty(input_dim, input_dim))
+        self.bias = nn.Parameter(torch.empty(input_dim))
+
+    def get_log_det(self, x, cond=None):
+        return torch.slogdet(self.weight).logabsdet * torch.ones(x.shape[:-1])
+
+    def forward(self, x, cond=None):
+        return x @ self.weight + self.bias, self.get_log_det(x, cond=cond)
+
+    def inverse(self, y, cond=None):
+        return (y - self.bias) @ torch.inverse(self.weight), -self.get_log_det(
+            y, cond=cond
+        )
