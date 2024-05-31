@@ -223,6 +223,24 @@ class Sigmoid(FactorizedTransform):
         return y.log() - (-y).log1p()
 
 
+class LeakyReLU(FactorizedTransform):
+    def __init__(self, alpha=0.01, dim=-1):
+        super().__init__(dim=dim)
+        self.alpha = alpha
+
+    def get_log_det(self, x, cond=None):
+        # Log determinant is log(1) for x > 0 and log(alpha) for x <= 0
+        return torch.where(
+            x > 0, torch.zeros_like(x), torch.log(torch.full_like(x, self.alpha))
+        )
+
+    def factorized_transform(self, x, cond=None):
+        return F.leaky_relu(x, self.alpha)
+
+    def factorized_inverse_transform(self, y, cond=None):
+        return torch.where(y > 0, y, y / self.alpha)
+
+
 class Log(FactorizedTransform):
     def get_log_det(self, x, cond=None):
         return -torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny))
@@ -298,7 +316,43 @@ class Affine(nn.Module):
     def forward(self, x, cond=None):
         return x @ self.weight + self.bias, self.get_log_det(x, cond=cond)
 
+    # TODO: use QR decomposition for more stable inversion
     def inverse(self, y, cond=None):
         return (y - self.bias) @ torch.inverse(self.weight), -self.get_log_det(
             y, cond=cond
         )
+
+
+class AffineCoupling(nn.Module):
+    def __init__(self, transform, mask):
+        super().__init__()
+        self.transform = transform
+        self.mask = mask
+
+    def forward(self, x, cond=None):
+        x0, x1 = x[:, self.mask], x[:, ~self.mask]
+        y0 = x0
+        shift, log_scale = self.transform(x0, cond=cond)
+        y1 = x1 * log_scale.exp() + shift
+        return torch.cat([y0, y1], dim=1), log_scale
+
+    def inverse(self, y, cond=None):
+        y0, y1 = y[:, self.mask], y[:, ~self.mask]
+        x0 = y0
+        shift, log_scale = self.transform(y0, cond=cond)
+        x1 = (y1 - shift) / log_scale.exp()
+        return torch.cat([x0, x1], dim=1), log_scale
+
+    def factorized_forward(self, x, cond=None):
+        x0, x1 = x[:, self.mask], x[:, ~self.mask]
+        y0 = x0
+        shift, log_scale = self.transform.factorized_forward(x0, cond=cond)
+        y1 = x1 * log_scale.exp() + shift
+        return torch.cat([y0, y1], dim=1), log_scale
+
+    def factorized_inverse(self, y, cond=None):
+        y0, y1 = y[:, self.mask], y[:, ~self.mask]
+        x0 = y0
+        shift, log_scale = self.transform.factorized_inverse(y0, cond=cond)
+        x1 = (y1 - shift) / log_scale.exp()
+        return torch.cat([x0, x1], dim=1), log_scale
