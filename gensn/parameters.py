@@ -66,11 +66,17 @@ class Covariance(nn.Module):
             rank = n_dims
         self.n_dims = n_dims
         self.rank = rank
-        self.A = nn.Parameter(torch.randn(n_dims, rank))
-        self.eps = torch.finfo(self.A.dtype).eps
+        self.A = nn.Parameter(
+            torch.randn(n_dims, rank) * 0.1
+        )  # Initialize with small values to achieve positive definiteness
+        # self.eps = torch.finfo(self.A.dtype).eps
+        self.eps = 1e-4  # For numerical stability of positive definiteness
 
     def forward(self, *args):
-        return self.A @ self.A.T + torch.eye(self.n_dims) * self.eps
+        return (
+            self.A @ self.A.T
+            + torch.eye(self.n_dims).to(device=self.A.device) * self.eps
+        )
 
     @property
     def value(self):
