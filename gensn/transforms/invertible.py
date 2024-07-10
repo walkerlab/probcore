@@ -245,7 +245,7 @@ class Log(FactorizedTransform):
     def get_log_det(self, x, cond=None):
         return -torch.log(abs(x).clamp(min=torch.finfo(x.dtype).tiny))
 
-    def factorized_forward(self, x, cond=None):
+    def factorized_transform(self, x, cond=None):
         return x.clamp(min=torch.finfo(x.dtype).tiny).log()
 
     def factorized_inverse_transform(self, y, cond=None):
@@ -311,7 +311,9 @@ class Affine(nn.Module):
         self.bias = nn.Parameter(torch.empty(input_dim))
 
     def get_log_det(self, x, cond=None):
-        return torch.slogdet(self.weight).logabsdet * torch.ones(x.shape[:-1])
+        return torch.slogdet(self.weight).logabsdet * torch.ones(x.shape[:-1]).to(
+            device=x.device
+        )
 
     def forward(self, x, cond=None):
         return x @ self.weight + self.bias, self.get_log_det(x, cond=cond)
