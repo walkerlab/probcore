@@ -24,6 +24,12 @@ class Joint(nn.Module):
         x, y = obs[: self.prior.n_rvs], obs[self.prior.n_rvs :]
         return self.prior(*x, cond=cond) + self.conditional(*y, cond=x)
 
+    def factorized_log_prob(self, *obs, cond=None):
+        x, y = obs[: self.prior.n_rvs], obs[self.prior.n_rvs :]
+        return self.prior.factorized_log_prob(
+            *x, cond=cond
+        ) + self.conditional.factorized_log_prob(*y, cond=x)
+
     def forward(self, *obs, cond=None):
         return self.log_prob(*obs, cond=cond)
 
@@ -36,23 +42,6 @@ class Joint(nn.Module):
         x_samples = self.prior.rsample(sample_shape=sample_shape, cond=cond)
         y_samples = self.conditional.rsample(cond=x_samples)
         return turn_to_tuple(x_samples) + turn_to_tuple(y_samples)
-
-
-# class DeltaDistribution(nn.Module):
-#     def __init__(self, value):
-#         self.value = value
-
-#     def log_prob(self, obs, cond=None):
-#         # TODO: write to deal with more than one rvs
-#         return torch.log(self.prob(obs, cond=cond))
-
-#     def prob(self, obs, cond=None):
-#         # TODO: write to deal with more than one rvs
-#         return torch.where(
-#             torch.equal(obs, parse_attr(self.value, cond=cond)), 0, 1
-#         ).to(obs.device)
-
-#     def sample(self, sample_shape=torch.size([]), cond=None):
 
 
 class TrainableDistribution(nn.Module, ABC):
@@ -73,19 +62,16 @@ class TrainableDistribution(nn.Module, ABC):
         ...
 
     @abstractmethod
-    def log_prob(self, *obs, cond=None):
-        ...
+    def log_prob(self, *obs, cond=None): ...
 
     def forward(self, *obs, cond=None):
         return self.log_prob(*obs, cond=cond)
 
     @abstractmethod
-    def sample(self, sample_shape=torch.Size([]), cond=None):
-        ...
+    def sample(self, sample_shape=torch.Size([]), cond=None): ...
 
     @abstractmethod
-    def rsample(self, sample_shape=torch.Size([]), cond=None):
-        ...
+    def rsample(self, sample_shape=torch.Size([]), cond=None): ...
 
 
 class TrainableDistributionAdapter(nn.Module):
@@ -109,26 +95,6 @@ class TrainableDistributionAdapter(nn.Module):
         # of parameters
         if _parameters is not None:
             self.parameter_generator = _parameters
-
-    # overwrite extra_repr to include the distribution class
-    # TODO: consider adding the parameters as well
-    def extra_repr(self):
-        repr = f"distribution_class={self.distribution_class!r}"
-
-        if self.param_counts > 0:
-            repr += ", " + ", ".join(
-                f"{getattr(self, f'_arg{pos}')!r}" for pos in range(self.param_counts)
-            )
-
-        if len(self.param_keys) > 0:
-            repr += ", " + ", ".join(
-                f"{k}={getattr(self, k)!r}" for k in self.param_keys
-            )
-
-        if hasattr(self, "parameter_genrator"):
-            repr += ", " + f"_parameters={self.parameter_generator!r}"
-
-        return repr
 
     def distribution(self, cond=None):
         cond = turn_to_tuple(cond)
@@ -162,18 +128,25 @@ class TrainableDistributionAdapter(nn.Module):
     def rsample(self, sample_shape=torch.Size([]), cond=None):
         return self.distribution(cond=cond).rsample(sample_shape=sample_shape)
 
+    # overwrite extra_repr to include the distribution class
+    # TODO: consider adding the parameters as well
+    def extra_repr(self):
+        repr = f"distribution_class={self.distribution_class!r}"
 
-# def wrap_with_indep(distribution_class, event_dims=1):
-#     """
-#     Wrap the construction of the target distribution `distr_class` with
-#     D.Independent. The returned function can be used as if it is
-#     a constructor for an indepdenent version of the distribution
-#     """
+        if self.param_counts > 0:
+            repr += ", " + ", ".join(
+                f"{getattr(self, f'_arg{pos}')!r}" for pos in range(self.param_counts)
+            )
 
-#     def indep_distr(*args, **kwargs):
-#         return D.Independent(distribution_class(*args, **kwargs), event_dims)
+        if len(self.param_keys) > 0:
+            repr += ", " + ", ".join(
+                f"{k}={getattr(self, k)!r}" for k in self.param_keys
+            )
 
-#     return indep_distr
+        if hasattr(self, "parameter_genrator"):
+            repr += ", " + f"_parameters={self.parameter_generator!r}"
+
+        return repr
 
 
 class IndependentTrainableDistributionAdapter(TrainableDistributionAdapter):
@@ -193,6 +166,12 @@ class IndependentTrainableDistributionAdapter(TrainableDistributionAdapter):
     def distribution(self, cond=None):
         return D.Independent(super().distribution(cond=cond), self.event_dims)
 
+    def factorized_distribution(self, cond=None):
+        return super().distribution(cond=cond)
+
+    def factorized_log_prob(self, *obs, cond=None):
+        return self.factorized_distribution(cond=cond).log_prob(*obs)
+
     def extra_repr(self):
         return super().extra_repr() + f", event_dims={self.event_dims}"
 
@@ -211,6 +190,9 @@ class WrappedTrainableDistribution(nn.Module):
 
     def log_prob(self, *obs, cond=None):
         return self.trainable_distribution.log_prob(*obs, cond=cond)
+
+    def factorized_log_prob(self, *obs, cond=None):
+        return self.trainable_distribution.factorized_log_prob(*obs, cond=cond)
 
     def sample(self, sample_shape=torch.Size([]), cond=None):
         return self.trainable_distribution.sample(sample_shape=sample_shape, cond=cond)
@@ -421,3 +403,63 @@ class IndependentLogNormal(WrappedTrainableDistribution):
             **kwargs,
             _parameters=_parameters,
         )
+
+
+class IndependentPoisson(WrappedTrainableDistribution):
+    """
+    A trainable distribution that wraps a D.Independent(D.Poisson) distribution
+    """
+
+    def __init__(self, rate=None, _parameters=None, event_dims=1):
+        """
+        Args:
+            rate : torch.Tensor or nn.Parameter or None
+                The rate parameter of the poisson distribution. If None, _parameters must be provided
+            _parameters : callable or None
+                A function that takes in the conditioning variable and returns a dictionary of parameters
+                for the poisson distribution. If None, rate must be provided
+            event_dims : int
+                The number of dimensions to be considered as the event dimensions
+        """
+        super().__init__()
+        if rate is None and _parameters is None:
+            raise ValueError("If rate is unspecificed, _parameters must be provided")
+        kwargs = {}
+        if rate is not None:
+            kwargs["rate"] = rate
+        self.trainable_distribution = IndependentTrainableDistributionAdapter(
+            D.Poisson,
+            event_dims=event_dims,
+            **kwargs,
+            _parameters=_parameters,
+        )
+
+
+# class DeltaDistribution(nn.Module):
+#     def __init__(self, value):
+#         self.value = value
+
+#     def log_prob(self, obs, cond=None):
+#         # TODO: write to deal with more than one rvs
+#         return torch.log(self.prob(obs, cond=cond))
+
+#     def prob(self, obs, cond=None):
+#         # TODO: write to deal with more than one rvs
+#         return torch.where(
+#             torch.equal(obs, parse_attr(self.value, cond=cond)), 0, 1
+#         ).to(obs.device)
+
+#     def sample(self, sample_shape=torch.size([]), cond=None):
+
+
+# def wrap_with_indep(distribution_class, event_dims=1):
+#     """
+#     Wrap the construction of the target distribution `distr_class` with
+#     D.Independent. The returned function can be used as if it is
+#     a constructor for an indepdenent version of the distribution
+#     """
+
+#     def indep_distr(*args, **kwargs):
+#         return D.Independent(distribution_class(*args, **kwargs), event_dims)
+
+#     return indep_distr
