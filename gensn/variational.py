@@ -280,6 +280,32 @@ class VariationalBound(nn.Module):
             n_samples=n_samples,
         )
 
+    def compute_bound(self, *obs, cond=None, n_samples=None, bound_type=None):
+        """
+        Compute the selected variational bound based on string input.
+
+        Args:
+            obs (tuple): Observations `x`, passed as variable length arguments.
+            cond (optional): Conditioning variables for the bound function.
+            n_samples (int, optional): The number of samples to draw for the IW bound. Default is `self.n_samples`.
+            bound_type (str, optional): The type of variational bound to compute.
+
+        Returns:
+            torch.Tensor: The computed variational bound.
+        """
+        if bound_type is None:
+            bound_type = self.bound_type
+        if bound_type == "elbo":
+            return self.elbo(*obs, cond=cond, n_samples=n_samples)
+        elif bound_type == "iw":
+            return self.iw_bound(*obs, cond=cond, n_samples=n_samples)
+        elif bound_type == "renyi":
+            raise NotImplementedError("Renyi bound not implemented yet")
+        elif bound_type == "forward_kl":
+            raise NotImplementedError("Forward KL bound not implemented yet")
+        else:
+            raise ValueError("Unknown bound type")
+
     def sample(self, sample_shape=torch.Size([]), cond=None):
         """
         Sample from the joint distribution `p(x, z)`.
